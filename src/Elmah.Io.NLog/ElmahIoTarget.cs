@@ -50,7 +50,6 @@ namespace Elmah.Io.NLog
         /// <summary>
         /// The API key from the elmah.io UI.
         /// </summary>
-        [RequiredParameter]
         public string ApiKey
         {
             get
@@ -69,7 +68,6 @@ namespace Elmah.Io.NLog
         /// <summary>
         /// The id of the log to send messages to.
         /// </summary>
-        [RequiredParameter]
         public string LogId
         {
             get
@@ -170,6 +168,16 @@ namespace Elmah.Io.NLog
         protected override void InitializeTarget()
         {
             _usingDefaultLayout = Layout == null || Layout.ToString() == DefaultLayout;
+
+            if (string.IsNullOrEmpty(ApiKey))
+            {
+                throw new NLogConfigurationException("ElmahIoTarget: ApiKey must be specified.");
+            }
+
+            if (string.IsNullOrEmpty(LogId))
+            {
+                throw new NLogConfigurationException("ElmahIoTarget: LogId must be specified.");
+            }
 
             TrySetLayout(
                 v => HostnameLayout = v,
@@ -422,22 +430,31 @@ namespace Elmah.Io.NLog
             }
 
             var properties = GetAllProperties(logEvent);
-
-            var sb = new StringBuilder();
-            var valueFormatter = ResolveService<IValueFormatter>();
-            foreach (var obj in properties)
+            if (properties.Count > 0)
             {
-                if (obj.Value != null)
+                StringBuilder sb = null;
+                IValueFormatter valueFormatter = null;
+                foreach (var obj in properties)
                 {
+                    var propertyValue = obj.Value;
+                    if (propertyValue is null)
+                        continue;
+
                     string text;
-                    if (obj.Value is string value)
+                    if (propertyValue is string value)
                     {
                         text = value;
                     }
+                    else if (propertyValue is IFormattable formattable)
+                    {
+                        text = formattable.ToString(null, null);
+                    }
                     else
                     {
+                        valueFormatter ??= ResolveService<IValueFormatter>();
+                        sb ??= new StringBuilder();
                         sb.Length = 0;  // Reuse StringBuilder
-                        valueFormatter.FormatValue(obj.Value, null, CaptureType.Normal, null, sb);
+                        valueFormatter.FormatValue(propertyValue, null, CaptureType.Normal, null, sb);
                         text = sb.ToString();
                     }
                     items.Add(new Item { Key = obj.Key, Value = text });
